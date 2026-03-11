@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from agents.graph import build_graph, make_initial_state
-from agents.prompts import AGENT_PERSONAS
+from agents.prompts import AGENT_PERSONAS, EXECUTIVE_PROMPTS, EXECUTIVE_ROLES, DIRECTOR_SYSTEM_PROMPT
 from agents.state import APEXState
 
 # ---------------------------------------------------------------------------
@@ -463,21 +463,119 @@ async def submit_feedback(session_id: str, req: FeedbackRequest):
 
 
 # ---------------------------------------------------------------------------
-# WebSocket Feedback — streaming re-evaluation with CEO feedback
+# Directed CEO feedback — single-agent LLM call (no full graph)
+# ---------------------------------------------------------------------------
+
+_VALID_DIRECTED_ROLES = {"cso", "cto", "cmo", "cbo", "director"}
+
+_DIRECTED_FEEDBACK_PROMPT = """\
+You are {role_label}.
+
+The CEO has asked you a follow-up question about the drug target evaluation.
+
+QUERY: {query}
+
+YOUR PREVIOUS ASSESSMENT:
+{previous_assessment}
+
+RESEARCH CONTEXT (Scout Summary):
+{scout_data_snippet}
+
+CEO QUESTION/FEEDBACK:
+{feedback}
+
+Respond directly to the CEO's question in your voice and expertise. Be concise \
+but thorough. Reference specific evidence from your assessment or the research \
+data. If the CEO asks for information outside your domain, acknowledge that and \
+suggest which executive would be better suited to answer."""
+
+
+async def _directed_agent_call(
+    role: str,
+    feedback: str,
+    session: dict,
+) -> tuple[str, float]:
+    """Make a single LLM call to one agent with CEO feedback.
+
+    Returns (response_text, cost_usd).
+    """
+    from agents import (
+        ANTHROPIC_API_KEY, LLM_MODEL, LLM_TEMPERATURE,
+        LLM_TIMEOUT_SECONDS, estimate_cost, llm_semaphore,
+    )
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    result = session["result"]
+    query = session["query"]
+
+    # Pick the right system prompt and previous text
+    if role == "director":
+        system_prompt = DIRECTOR_SYSTEM_PROMPT
+        role_label = "Dr. Amara Chen, Portfolio Director"
+        previous = result.get("portfolio_verdict", "No previous verdict.")
+    else:
+        system_prompt = EXECUTIVE_PROMPTS[role]
+        role_label = EXECUTIVE_ROLES[role]
+        # Use rebuttal if available, else assessment
+        previous = result.get(f"{role}_rebuttal") or result.get(f"{role}_assessment", "")
+
+    scout_snippet = (result.get("scout_data") or "")[:2000]
+
+    user_prompt = _DIRECTED_FEEDBACK_PROMPT.format(
+        role_label=role_label,
+        query=query,
+        previous_assessment=previous[:3000],
+        scout_data_snippet=scout_snippet,
+        feedback=feedback,
+    )
+
+    llm = ChatAnthropic(
+        model=LLM_MODEL,
+        temperature=LLM_TEMPERATURE,
+        api_key=ANTHROPIC_API_KEY,
+        max_tokens=1500,
+    )
+
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+    cost = 0.0
+
+    async with llm_semaphore:
+        try:
+            response = await asyncio.wait_for(
+                llm.ainvoke(messages),
+                timeout=LLM_TIMEOUT_SECONDS,
+            )
+            usage = getattr(response, "usage_metadata", None) or {}
+            cost = estimate_cost(
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
+            )
+            return response.content, cost
+        except asyncio.TimeoutError:
+            return f"[{role_label} timed out — please try again]", 0.0
+        except Exception as e:
+            return f"[Error: {str(e)[:200]}]", 0.0
+
+
+# ---------------------------------------------------------------------------
+# WebSocket Feedback — directed single-agent OR full re-evaluation
 # ---------------------------------------------------------------------------
 
 
 @app.websocket("/ws/feedback/{session_id}")
 async def ws_feedback(websocket: WebSocket, session_id: str):
-    """WebSocket streaming re-evaluation with CEO feedback.
+    """WebSocket CEO feedback handler.
 
-    Client sends: {"feedback": "Focus more on safety profile"} or {"message": "..."}
-    Server streams the full re-evaluation with CEO feedback injected.
+    Client sends:
+      Directed:  {"message": "@elena what data?", "directed_to": "cso"}
+      Full:      {"message": "re-evaluate with focus on safety"}
     """
     await websocket.accept()
     keepalive_task = asyncio.create_task(_ws_keepalive(websocket))
 
     try:
+        # Validate session
         if session_id not in sessions:
             await websocket.send_json({
                 "type": "error",
@@ -499,9 +597,10 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
             await websocket.close()
             return
 
+        # Parse incoming message
         data = await websocket.receive_json()
-        # Accept both "feedback" and "message" keys from frontend
         feedback = (data.get("feedback") or data.get("message") or "").strip()
+        directed_to = (data.get("directed_to") or "").strip().lower()
 
         if not feedback or len(feedback) < 3:
             await websocket.send_json({
@@ -515,10 +614,80 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
 
         original_result = session["result"]
         original_query = session["query"]
+        ts = datetime.now(timezone.utc).isoformat()
+
+        # -----------------------------------------------------------
+        # DIRECTED: single-agent response (~10s instead of 90s)
+        # -----------------------------------------------------------
+        if directed_to and directed_to in _VALID_DIRECTED_ROLES:
+            agent_role = directed_to if directed_to != "director" else "portfolio_director"
+            persona = AGENT_PERSONAS.get(agent_role, AGENT_PERSONAS.get(directed_to, {}))
+            node_name = f"{directed_to}_feedback"
+
+            # Send session start
+            await websocket.send_json({
+                "type": "session_start",
+                "node": "system",
+                "data": {
+                    "session_id": session_id,
+                    "query": original_query,
+                    "directed_to": directed_to,
+                    "ceo_feedback": feedback,
+                },
+                "timestamp": ts,
+            })
+
+            # Send node_start
+            await websocket.send_json({
+                "type": "node_start",
+                "node": node_name,
+                "agent": agent_role,
+                "persona": persona,
+                "timestamp": ts,
+            })
+
+            # Single LLM call
+            response_text, cost = await _directed_agent_call(
+                directed_to, feedback, session,
+            )
+
+            # Send node_complete with the response
+            await websocket.send_json({
+                "type": "node_complete",
+                "node": node_name,
+                "agent": agent_role,
+                "persona": persona,
+                "data": {
+                    "content": response_text,
+                    "directed_to": directed_to,
+                    "ceo_feedback": feedback,
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+            # Send complete
+            await websocket.send_json({
+                "type": "complete",
+                "node": "system",
+                "data": {
+                    "session_id": session_id,
+                    "directed_to": directed_to,
+                    "ceo_feedback": feedback,
+                    "confidence_score": original_result.get("confidence_score", 0),
+                    "verdict": _parse_verdict_short(original_result.get("portfolio_verdict", "")),
+                    "debate_rounds": original_result.get("debate_round", 0),
+                    "estimated_cost_usd": cost,
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            return
+
+        # -----------------------------------------------------------
+        # FULL re-evaluation: all agents + debate + director
+        # -----------------------------------------------------------
         eval_round = original_result.get("evaluation_round", 0) + 1
         new_session_id = str(uuid.uuid4())
 
-        # Send session start
         await websocket.send_json({
             "type": "session_start",
             "node": "system",
@@ -529,7 +698,7 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
                 "evaluation_round": eval_round,
                 "ceo_feedback": feedback,
             },
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": ts,
         })
 
         graph = build_graph()
@@ -540,7 +709,7 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
                 "feedback": feedback,
                 "round": eval_round,
                 "from_session": session_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": ts,
             }
         ]
         state["evaluation_round"] = eval_round
@@ -552,7 +721,7 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
 
         async for event in graph.astream(state, stream_mode="updates"):
             for node_name, node_data in event.items():
-                ts = datetime.now(timezone.utc).isoformat()
+                evt_ts = datetime.now(timezone.utc).isoformat()
 
                 if node_data is None:
                     continue
@@ -568,7 +737,7 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
                     "agent": agent_role,
                     "persona": persona,
                     "data": _extract_event_data(node_name, node_data),
-                    "timestamp": ts,
+                    "timestamp": evt_ts,
                 })
 
                 for k, v in node_data.items():
@@ -613,7 +782,7 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
             await websocket.send_json({
                 "type": "error",
                 "node": "system",
-                "data": {"message": str(e)[:500]},
+                "data": {"message": f"Feedback handler error: {str(e)[:500]}"},
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
         except Exception:
