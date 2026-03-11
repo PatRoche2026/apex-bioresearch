@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -111,13 +112,19 @@ _NODE_TYPE_MAP = {
 
 
 def _parse_verdict_short(text: str) -> str:
-    """Extract short verdict from portfolio verdict text. NO-GO checked first."""
+    """Extract short verdict from portfolio verdict text.
+
+    Uses same logic as parse_verdict in executives.py — NO-GO first,
+    then CONDITIONAL GO, then standalone GO.
+    """
     upper = text.upper()
-    if "NO-GO" in upper or "NO GO" in upper:
+    # NO-GO first (not preceded by CONDITIONAL)
+    if re.search(r"(?<!CONDITIONAL\s)NO[\s-]?GO", upper):
         return "NO-GO"
-    if "CONDITIONAL GO" in upper:
+    if re.search(r"CONDITIONAL[\s-]?GO", upper):
         return "CONDITIONAL GO"
-    if "GO" in upper:
+    # Standalone GO — not preceded by NO or CONDITIONAL
+    if re.search(r"(?<!NO[\s-])(?<!NO)(?<!CONDITIONAL\s)\bGO\b", upper):
         return "GO"
     return "CONDITIONAL GO"
 
@@ -751,7 +758,7 @@ async def ws_evaluate(websocket: WebSocket):
                 "confidence_score": final_result.get("confidence_score", 0),
                 "verdict": verdict_short,
                 "debate_rounds": final_result.get("debate_round", 0),
-                "weighted_total": final_result.get("executive_scores", {}).get("weighted_total"),
+                "weighted_total": final_result.get("executive_scores", {}).get("weighted_total", 0),
                 "estimated_cost_usd": _sum_costs(final_result),
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),

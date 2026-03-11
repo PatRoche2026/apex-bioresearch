@@ -80,18 +80,18 @@ def parse_confidence(text: str) -> int:
 def parse_verdict(text: str) -> str:
     """Extract GO / CONDITIONAL GO / NO-GO from text.
 
-    Priority order matters: NO-GO must be checked before CONDITIONAL GO,
-    because text containing "NO-GO" could also match "GO" or appear
-    alongside "CONDITIONAL GO" discussion.
+    Uses upper-cased text and checks NO-GO first (most restrictive),
+    then CONDITIONAL GO, then standalone GO (not preceded by NO/CONDITIONAL).
     """
-    # 1. NO-GO first (highest priority — most restrictive verdict)
-    if re.search(r"\bNO[\s-]GO\b", text, re.IGNORECASE):
+    upper = text.upper()
+    # 1. NO-GO first — match "NO-GO", "NO GO", "NOGO" (not preceded by "CONDITIONAL ")
+    if re.search(r"(?<!CONDITIONAL\s)NO[\s-]?GO", upper):
         return "NO-GO"
-    # 2. CONDITIONAL GO (contains "GO" so must come before bare GO check)
-    if re.search(r"\bCONDITIONAL\s+GO\b", text, re.IGNORECASE):
+    # 2. CONDITIONAL GO
+    if re.search(r"CONDITIONAL[\s-]?GO", upper):
         return "CONDITIONAL GO"
-    # 3. Plain GO
-    if re.search(r"\bGO\b", text):
+    # 3. Plain GO — must not be preceded by "NO" or "CONDITIONAL"
+    if re.search(r"(?<!NO[\s-])(?<!NO)(?<!CONDITIONAL\s)\bGO\b", upper):
         return "GO"
     return "CONDITIONAL GO"  # default if parsing fails
 
@@ -276,9 +276,8 @@ def _make_rebuttal_node(role: str):
         rebuttal, call_cost = await _call_llm(system_prompt, user_prompt)
         scores = parse_scores(rebuttal)
 
-        return {
+        result: dict = {
             field_name: rebuttal,
-            "executive_scores": {role: scores},
             "activity_log": [
                 {
                     "node": f"{role}_rebuttal",
@@ -293,6 +292,13 @@ def _make_rebuttal_node(role: str):
                 }
             ],
         }
+
+        # Only update executive_scores if rebuttal contained parseable scores;
+        # otherwise the empty dict would overwrite assessment scores via _merge_dicts
+        if scores:
+            result["executive_scores"] = {role: scores}
+
+        return result
 
     rebuttal_node.__name__ = f"{role}_rebuttal_node"
     rebuttal_node.__qualname__ = f"{role}_rebuttal_node"
