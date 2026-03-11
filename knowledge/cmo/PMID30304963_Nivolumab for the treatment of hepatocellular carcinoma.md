@@ -1,0 +1,10 @@
+# Nivolumab for the treatment of hepatocellular carcinoma.
+
+**PMID:** 30304963
+**Journal:** Expert review of anticancer therapy (2018)
+**Authors:** Finkelmeier F, Waidmann O, Trojan J
+**Search context:** regulatory_strategy
+
+## Abstract
+
+T-cell checkpoint inhibition as a cancer treatment approach has been the main breakthrough in cancer treatment during the last years. Since the approval of the first commercial CTLA-4 antibody ipilimumab in 2011 for the treatment of melanoma, research and drug development in this field has accelerated massively. In 2014, the US Food and Drug Administration (FDA) approved the first PD-1 targeting agent, namely pembrolizumab, shortly followed by nivolumab. Areas covered: Nivolumab is a fully human immunoglobulin G4 anti-PD-1 monoclonal antibody which is approved for multiple advanced malignancies, including melanoma, non-small cell lung cancer, renal cell cancer, Hodgkin's lymphoma, squamous head and neck cancer, and urothelial carcinoma. In September 2017, nivolumab was approved by the FDA for liver cancer as a second line treatment after failure of sorafenib based on the data of the multi-cohort phase 1/2 trial CheckMate-040. This article reviews the concept of immunotherapy in liver cancer with focus on nivolumab. Expert commentary: Immunotherapy in hepatocellular carcinoma is safe and is a new treatment option for patients with advanced stage disease besides sorafenib and regorafenib in the US. Randomized phase III trials of nivolumab, pembrolizumab, atezolizumab, durvalumab and tislelizumab as mono- or combination-therapy are ongoing.

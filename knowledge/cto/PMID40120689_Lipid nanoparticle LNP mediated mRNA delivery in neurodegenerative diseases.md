@@ -1,0 +1,10 @@
+# Lipid nanoparticle (LNP) mediated mRNA delivery in neurodegenerative diseases.
+
+**PMID:** 40120689
+**Journal:** Journal of controlled release : official journal of the Controlled Release Society (2025)
+**Authors:** Moosavi SG, Rahiman N, Jaafari MR et al.
+**Search context:** rna_therapeutics_delivery
+
+## Abstract
+
+Neurodegenerative diseases (NDD) are characterized by the progressive loss of neurons and the impairment of cellular functions. Messenger RNA (mRNA) has emerged as a promising therapy for treating NDD, as it can encode missing or dysfunctional proteins and anti-inflammatory cytokines or neuroprotective proteins to halt the progression of these diseases. However, effective mRNA delivery to the central nervous system (CNS) remains a significant challenge due to the limited penetration of the blood-brain barrier (BBB). Lipid nanoparticles (LNPs) offer an efficient solution by encapsulating and protecting mRNA, facilitating transfection and intracellular delivery. This review discusses the pathophysiological mechanisms of neurological disorders, including Parkinson's disease (PD), Alzheimer's disease (AD), multiple sclerosis (MS), Huntington's disease (HD), ischemic stroke, spinal cord injury, and Friedreich's ataxia. Additionally, it explores the potential of LNP-mediated mRNA delivery as a therapeutic strategy for these diseases. Various approaches to overcoming BBB-related challenges and enhancing the delivery and efficacy of mRNA-LNPs are discussed, including non-invasive methods with strong potential for clinical translation. With advancements in artificial intelligence (AI)-guided mRNA and LNP design, targeted delivery, gene editing, and CAR-T cell therapy, mRNA-LNPs could significantly transform the treatment landscape for NDD, paving the way for future clinical applications.

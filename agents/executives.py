@@ -15,6 +15,7 @@ from agents import (
     LLM_MODEL,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_SECONDS,
+    estimate_cost,
     llm_semaphore,
 )
 from agents.prompts import (
@@ -77,12 +78,19 @@ def parse_confidence(text: str) -> int:
 
 
 def parse_verdict(text: str) -> str:
-    """Extract GO / CONDITIONAL GO / NO-GO from text."""
-    # Check for the most specific first
-    if re.search(r"\bCONDITIONAL\s+GO\b", text, re.IGNORECASE):
-        return "CONDITIONAL GO"
+    """Extract GO / CONDITIONAL GO / NO-GO from text.
+
+    Priority order matters: NO-GO must be checked before CONDITIONAL GO,
+    because text containing "NO-GO" could also match "GO" or appear
+    alongside "CONDITIONAL GO" discussion.
+    """
+    # 1. NO-GO first (highest priority — most restrictive verdict)
     if re.search(r"\bNO[\s-]GO\b", text, re.IGNORECASE):
         return "NO-GO"
+    # 2. CONDITIONAL GO (contains "GO" so must come before bare GO check)
+    if re.search(r"\bCONDITIONAL\s+GO\b", text, re.IGNORECASE):
+        return "CONDITIONAL GO"
+    # 3. Plain GO
     if re.search(r"\bGO\b", text):
         return "GO"
     return "CONDITIONAL GO"  # default if parsing fails
@@ -93,8 +101,12 @@ def parse_verdict(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _call_llm(system_prompt: str, user_prompt: str) -> str:
-    """Call LLM with rate limit semaphore and timeout protection."""
+async def _call_llm(system_prompt: str, user_prompt: str) -> tuple[str, float]:
+    """Call LLM with rate limit semaphore and timeout protection.
+
+    Returns:
+        (response_text, estimated_cost_usd)
+    """
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
@@ -105,11 +117,16 @@ async def _call_llm(system_prompt: str, user_prompt: str) -> str:
                 _llm.ainvoke(messages),
                 timeout=LLM_TIMEOUT_SECONDS,
             )
-            return response.content
+            # Extract token usage for cost estimation
+            usage = getattr(response, "usage_metadata", None) or {}
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+            cost = estimate_cost(input_tokens, output_tokens)
+            return response.content, cost
         except asyncio.TimeoutError:
-            return "[Agent timed out after 60s — proceeding with available assessments]"
+            return "[Agent timed out after 60s — proceeding with available assessments]", 0.0
         except Exception as e:
-            return f"[Agent error: {str(e)[:200]}]"
+            return f"[Agent error: {str(e)[:200]}]", 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +174,8 @@ def _make_assess_node(role: str):
         if rag_context:
             user_prompt = f"{rag_context}\n\n---\n\n{user_prompt}"
 
-        assessment = await _call_llm(system_prompt, user_prompt)
+        assessment, call_cost = await _call_llm(system_prompt, user_prompt)
+        node_cost = call_cost
 
         # Two-pass: check for TOOL_REQUESTS and execute if found (role-filtered)
         tool_requests = parse_tool_requests(assessment)
@@ -171,7 +189,8 @@ def _make_assess_node(role: str):
                         query=state["query"],
                         tool_results=tool_results,
                     )
-                    assessment = await _call_llm(system_prompt, followup_prompt)
+                    assessment, followup_cost = await _call_llm(system_prompt, followup_prompt)
+                    node_cost += followup_cost
             except Exception:
                 pass  # Tool failure should not block assessment
 
@@ -184,6 +203,7 @@ def _make_assess_node(role: str):
             "scores": scores,
             "verdict": parse_verdict(assessment),
             "confidence": parse_confidence(assessment),
+            "cost_usd": node_cost,
             "timestamp": ts,
         }
         if tools_used:
@@ -253,7 +273,7 @@ def _make_rebuttal_node(role: str):
             cbo_assessment=state["cbo_assessment"],
         )
 
-        rebuttal = await _call_llm(system_prompt, user_prompt)
+        rebuttal, call_cost = await _call_llm(system_prompt, user_prompt)
         scores = parse_scores(rebuttal)
 
         return {
@@ -268,6 +288,7 @@ def _make_rebuttal_node(role: str):
                     "scores": scores,
                     "verdict": parse_verdict(rebuttal),
                     "confidence": parse_confidence(rebuttal),
+                    "cost_usd": call_cost,
                     "timestamp": ts,
                 }
             ],

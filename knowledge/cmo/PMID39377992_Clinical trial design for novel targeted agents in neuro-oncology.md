@@ -1,0 +1,10 @@
+# Clinical trial design for novel targeted agents in neuro-oncology.
+
+**PMID:** 39377992
+**Journal:** Journal of neuro-oncology (2025)
+**Authors:** Lim-Fat MJ, Roberto K, Wen PY
+**Search context:** adaptive_trial_design
+
+## Abstract
+
+Biomarker-based clinical trials investigating targeted treatments for brain tumors have surged due to better access to biomarker testing and a deeper grasp of the molecular basis of tumor development. The design of clinical trials is crucial for evaluating safety, confirming effectiveness, and affirming the clinical advantage of novel agents, with the goal of approval by regulatory authorities to expand patient treatment options. Given some challenges unique to brain tumors, early-stage clinical trials for novel targeted agents must integrate pharmacokinetics and tissue-based pharmacodynamic assessments to establish timely go-no-go decisions for larger studies. Surgical window-of-opportunity trials can allow for the comparison of treated and untreated tumor samples, verifying target engagement and its modulatory effects for evidence of biological activity. Due to the challenges of achieving the required sample sizes to power efficacy analyses, later-stage trials of targeted therapies can include basket trials which test one drug on multiple tumor types, while umbrella trials evaluate several biomarkers within a single histology. Platform trials can also be leveraged to investigate multiple biomarker-driven hypotheses within a unified protocol and can incorporate Bayesian algorithms for adaptive randomization. Selecting appropriate endpoints, such as progression-free survival or overall response rate, is crucial and novel response assessment criteria need to be considered in the context of the tumor and therapy being investigated. Lastly, inclusivity in trials is essential to address health disparities and engage diverse patient populations to ensure real-world impact. Future trials should build upon the knowledge gained from both initial achievements and past setbacks in the field.

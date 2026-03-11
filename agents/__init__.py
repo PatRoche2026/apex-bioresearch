@@ -43,3 +43,18 @@ LLM_TIMEOUT_SECONDS = 60
 
 ENTREZ_EMAIL = "patroche@mit.edu"
 PUBMED_RATE_LIMIT_DELAY = 0.5  # seconds between NCBI API calls
+
+# ---------------------------------------------------------------------------
+# Cost tracking — Claude Sonnet pricing (per million tokens)
+# ---------------------------------------------------------------------------
+
+COST_PER_M_INPUT = 3.0    # $3 per 1M input tokens
+COST_PER_M_OUTPUT = 15.0  # $15 per 1M output tokens
+
+
+def estimate_cost(input_tokens: int, output_tokens: int) -> float:
+    """Estimate USD cost from token counts using Claude Sonnet pricing."""
+    return round(
+        (input_tokens * COST_PER_M_INPUT + output_tokens * COST_PER_M_OUTPUT) / 1_000_000,
+        4,
+    )

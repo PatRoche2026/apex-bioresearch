@@ -1,0 +1,10 @@
+# IGF-1R and mTOR Blockade: Novel Resistance Mechanisms and Synergistic Drug Combinations for Ewing Sarcoma.
+
+**PMID:** 27576731
+**Journal:** Journal of the National Cancer Institute (2016)
+**Authors:** Lamhamedi-Cherradi SE, Menegaz BA, Ramamoorthy V et al.
+**Search context:** druggability_assessment
+
+## Abstract
+
+BACKGROUND: Therapies cotargeting insulin-like growth factor receptor 1 (IGF-1R) and mammalian target of rapamycin (mTOR) have demonstrated remarkable, albeit short-lived, clinical responses in a subset of Ewing sarcoma (ES) patients. However, the mechanisms of resistance and applicable strategies for overcoming drug resistance to the IGF-1R/mTOR blockade are still undefined. METHODS: To elucidate predominant mechanism(s) of acquired drug resistance while identifying synergistic drug combinations that improve clinical efficacy, we generated more than 18 ES cell lines resistant to IGF-1R- or mTOR-targeted therapy. Two small-molecule inhibitors of IGF-1R were chosen, NVP-ADW-742 (IGF-1R-selective) and OSI-906 (a dual IGF-1R/insulin receptor alpha [IR-alpha] inhibitor). Reverse-phase protein lysate arrays (RPPAs) revealed proteomic changes linked to IGF-1R/mTOR resistance, and selected proteins were validated in cell-based assays, xenografts, and within human clinical samples. All statistical tests were two-sided. RESULTS: Novel mechanisms of resistance (MOR) emerged after dalotuzumab-, NVP-ADW-742-, and OSI-906-based targeting of IGF-1R. MOR to dalotuzumab included upregulation of IRS1, PI3K, and STAT3, as well as p38 MAPK, which was also induced by OSI-906. pEIF4E(Ser209), a key regulator of Cap-dependent translation, was induced in ridaforolimus-resistant ES cell lines. Unique drug combinations targeting IGF-1R and PI3K-alpha or Mnk and mTOR were synergistic in vivo and vitro (P < .001) as assessed respectively by Mantel-Cox and isobologram testing. CONCLUSIONS: We discovered new druggable targets expressed by chemoresistant ES cells, xenografts, and relapsed human tumors. Joint suppression of these newfound targets, in concert with IGF-1R or mTOR blockade, should improve clinical outcomes.

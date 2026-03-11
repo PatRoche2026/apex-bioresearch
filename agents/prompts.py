@@ -206,24 +206,28 @@ Available tools (CSO-specific):
 - TOOL_REQUEST: search_pubmed('specific query', 5)
 - TOOL_REQUEST: search_uniprot('gene or protein name', 3)
 - TOOL_REQUEST: search_string_db('GENE_SYMBOL')
+- TOOL_REQUEST: search_and_read_papers('specific query', 3) — retrieves full text from PMC when available
 """,
     "cto": """\
 Available tools (CTO-specific):
 - TOOL_REQUEST: search_pubmed('specific query', 5)
 - TOOL_REQUEST: search_chembl('target name', 5)
 - TOOL_REQUEST: search_open_targets_tractability('GENE_SYMBOL')
+- TOOL_REQUEST: search_and_read_papers('specific query', 3) — retrieves full text from PMC when available
 """,
     "cmo": """\
 Available tools (CMO-specific):
 - TOOL_REQUEST: search_clinical_trials('target disease', 5)
 - TOOL_REQUEST: search_pubmed('specific query', 5)
 - TOOL_REQUEST: search_open_targets_safety('GENE_SYMBOL')
+- TOOL_REQUEST: search_and_read_papers('specific query', 3) — retrieves full text from PMC when available
 """,
     "cbo": """\
 Available tools (CBO-specific):
 - TOOL_REQUEST: search_pubmed('specific query', 5)
 - TOOL_REQUEST: search_open_targets('GENE_SYMBOL', 'disease name')
 - TOOL_REQUEST: search_clinical_trials('target disease', 5)
+- TOOL_REQUEST: search_and_read_papers('specific query', 3) — retrieves full text from PMC when available
 """,
 }
 

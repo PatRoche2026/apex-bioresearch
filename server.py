@@ -109,6 +109,26 @@ _NODE_TYPE_MAP = {
 }
 
 
+def _parse_verdict_short(text: str) -> str:
+    """Extract short verdict from portfolio verdict text. NO-GO checked first."""
+    upper = text.upper()
+    if "NO-GO" in upper or "NO GO" in upper:
+        return "NO-GO"
+    if "CONDITIONAL GO" in upper:
+        return "CONDITIONAL GO"
+    if "GO" in upper:
+        return "GO"
+    return "CONDITIONAL GO"
+
+
+def _sum_costs(result: dict) -> float:
+    """Sum all cost_usd values from activity_log entries."""
+    total = 0.0
+    for entry in result.get("activity_log", []):
+        total += entry.get("cost_usd", 0.0)
+    return round(total, 4)
+
+
 def _extract_event_data(node_name: str, node_data: dict) -> dict:
     """Extract the relevant content field from a node's output for the frontend."""
     if node_data is None:
@@ -248,6 +268,7 @@ async def evaluate(req: EvaluateRequest):
             "cbo": result.get("cbo_rebuttal", ""),
         },
         "activity_log": result.get("activity_log", []),
+        "estimated_cost_usd": _sum_costs(result),
     }
 
 
@@ -282,6 +303,7 @@ def get_results(session_id: str):
             "cbo": result.get("cbo_rebuttal", ""),
         },
         "activity_log": result.get("activity_log", []),
+        "estimated_cost_usd": _sum_costs(result),
         "timestamp": session["timestamp"],
     }
 
@@ -292,15 +314,7 @@ def list_sessions():
     summaries = []
     for sid, session in sessions.items():
         result = session["result"]
-        # Extract verdict text (GO/CONDITIONAL GO/NO-GO) from the full verdict
-        verdict_text = result.get("portfolio_verdict", "")
-        verdict_short = "UNKNOWN"
-        if "NO-GO" in verdict_text.upper():
-            verdict_short = "NO-GO"
-        elif "CONDITIONAL GO" in verdict_text.upper():
-            verdict_short = "CONDITIONAL GO"
-        elif "GO" in verdict_text.upper():
-            verdict_short = "GO"
+        verdict_short = _parse_verdict_short(result.get("portfolio_verdict", ""))
 
         summaries.append({
             "session_id": sid,
@@ -445,6 +459,7 @@ async def submit_feedback(session_id: str, req: FeedbackRequest):
         "confidence_score": result.get("confidence_score", 0),
         "verdict": result.get("portfolio_verdict", "")[:200],
         "debate_rounds": result.get("debate_round", 0),
+        "estimated_cost_usd": _sum_costs(result),
     }
 
 
@@ -573,6 +588,7 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
+        verdict_short = _parse_verdict_short(final_result.get("portfolio_verdict", ""))
         await websocket.send_json({
             "type": "complete",
             "node": "system",
@@ -582,8 +598,9 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
                 "evaluation_round": eval_round,
                 "ceo_feedback": feedback,
                 "confidence_score": final_result.get("confidence_score", 0),
-                "verdict": "CONDITIONAL GO",
+                "verdict": verdict_short,
                 "debate_rounds": final_result.get("debate_round", 0),
+                "estimated_cost_usd": _sum_costs(final_result),
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
@@ -700,28 +717,23 @@ async def ws_evaluate(websocket: WebSocket):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Send completion event
+        # Send completion event with parsed verdict
+        verdict_short = _parse_verdict_short(final_result.get("portfolio_verdict", ""))
         await websocket.send_json({
             "type": "complete",
             "node": "system",
             "data": {
                 "session_id": session_id,
                 "confidence_score": final_result.get("confidence_score", 0),
-                "verdict": "CONDITIONAL GO",  # default
+                "verdict": verdict_short,
                 "debate_rounds": final_result.get("debate_round", 0),
                 "weighted_total": final_result.get("executive_scores", {}).get("weighted_total"),
+                "estimated_cost_usd": _sum_costs(final_result),
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-        # Extract verdict from portfolio text
-        verdict_text = final_result.get("portfolio_verdict", "")
-        if "NO-GO" in verdict_text.upper():
-            sessions[session_id]["result"]["_verdict_short"] = "NO-GO"
-        elif "CONDITIONAL GO" in verdict_text.upper():
-            sessions[session_id]["result"]["_verdict_short"] = "CONDITIONAL GO"
-        elif "GO" in verdict_text.upper():
-            sessions[session_id]["result"]["_verdict_short"] = "GO"
+        sessions[session_id]["result"]["_verdict_short"] = verdict_short
 
     except WebSocketDisconnect:
         pass  # Client disconnected mid-evaluation

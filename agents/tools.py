@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
+import xml.etree.ElementTree as ET
 from typing import Any
 
 import httpx
+from Bio import Entrez
 
-from agents import PUBMED_RATE_LIMIT_DELAY
+from agents import ENTREZ_EMAIL, PUBMED_RATE_LIMIT_DELAY
+
+Entrez.email = ENTREZ_EMAIL
 
 # ---------------------------------------------------------------------------
 # Rate limit for external API calls
@@ -492,6 +497,153 @@ async def search_open_targets_safety(target_gene: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tool 9: Full-text paper retrieval via PubMed + PMC
+# ---------------------------------------------------------------------------
+
+
+def _pmids_to_pmc_ids(pmids: list[str]) -> dict[str, str]:
+    """Use Entrez.elink to map PubMed IDs to PMC IDs.
+
+    Returns:
+        {pmid: pmc_id} for papers that have free full text in PMC.
+    """
+    if not pmids:
+        return {}
+
+    try:
+        handle = Entrez.elink(
+            dbfrom="pubmed", db="pmc", id=pmids, linkname="pubmed_pmc"
+        )
+        records = Entrez.read(handle)
+        handle.close()
+        time.sleep(PUBMED_RATE_LIMIT_DELAY)
+    except Exception:
+        return {}
+
+    pmid_to_pmc: dict[str, str] = {}
+    for record in records:
+        pmid = str(record.get("IdList", [""])[0])
+        links = record.get("LinkSetDb", [])
+        if links:
+            pmc_links = links[0].get("Link", [])
+            if pmc_links:
+                pmid_to_pmc[pmid] = str(pmc_links[0]["Id"])
+
+    return pmid_to_pmc
+
+
+def _fetch_pmc_full_text(pmc_id: str, max_chars: int = 3000) -> str:
+    """Fetch full text from PMC and extract body text from XML.
+
+    Args:
+        pmc_id: Numeric PMC ID (without "PMC" prefix).
+        max_chars: Maximum characters to return.
+
+    Returns:
+        Extracted body text, truncated to max_chars.
+    """
+    try:
+        handle = Entrez.efetch(db="pmc", id=pmc_id, rettype="xml", retmode="xml")
+        xml_bytes = handle.read()
+        handle.close()
+        time.sleep(PUBMED_RATE_LIMIT_DELAY)
+    except Exception:
+        return ""
+
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return ""
+
+    # Extract all text from <body> element
+    body = root.find(".//body")
+    if body is None:
+        return ""
+
+    # Walk all text nodes under <body>, preserving section headers
+    parts: list[str] = []
+    for elem in body.iter():
+        if elem.tag == "title" and elem.text:
+            parts.append(f"\n### {elem.text.strip()}\n")
+        elif elem.tag == "p":
+            text = "".join(elem.itertext()).strip()
+            if text:
+                parts.append(text)
+
+    full_text = "\n".join(parts)
+    if len(full_text) > max_chars:
+        full_text = full_text[:max_chars] + "\n[...truncated]"
+
+    return full_text
+
+
+async def search_and_read_papers(query: str, max_papers: int = 3) -> str:
+    """Search PubMed for papers, then attempt to download full text from PMC.
+
+    Flow:
+    1. Search PubMed for the query
+    2. For each result, check if it has a PMC ID (free full text available)
+    3. If PMC ID exists, download the full text via Entrez.efetch(db="pmc")
+    4. If no PMC ID, fall back to the abstract
+    5. Return the combined text (full papers + abstracts)
+    """
+    from agents.scout import search_pubmed
+
+    try:
+        papers = search_pubmed(query, max_results=max_papers + 2)  # fetch extras in case some lack PMC
+    except Exception as e:
+        return f"PubMed search failed: {str(e)[:200]}"
+
+    if not papers:
+        return f"No PubMed results found for: {query}"
+
+    # Look up PMC IDs for all found papers
+    pmids = [p["pmid"] for p in papers if p["pmid"]]
+    pmid_to_pmc = await asyncio.to_thread(_pmids_to_pmc_ids, pmids)
+
+    lines = [f"Full-text paper retrieval for '{query}':"]
+    papers_with_full_text = 0
+
+    for p in papers:
+        if papers_with_full_text >= max_papers:
+            break
+
+        pmid = p["pmid"]
+        pmc_id = pmid_to_pmc.get(pmid)
+
+        if pmc_id:
+            # Fetch full text from PMC
+            full_text = await asyncio.to_thread(_fetch_pmc_full_text, pmc_id, 3000)
+            if full_text:
+                lines.append(
+                    f"\n{'='*60}\n"
+                    f"PMID {pmid} | PMC{pmc_id} | FULL TEXT\n"
+                    f"Title: {p['title']}\n"
+                    f"Journal: {p['journal']} ({p['year']})\n"
+                    f"{'='*60}\n"
+                    f"{full_text}"
+                )
+                papers_with_full_text += 1
+                continue
+
+        # Fallback to abstract
+        lines.append(
+            f"\n{'='*60}\n"
+            f"PMID {pmid} | ABSTRACT ONLY{' (no PMC full text)' if not pmc_id else ' (PMC fetch failed)'}\n"
+            f"Title: {p['title']}\n"
+            f"Journal: {p['journal']} ({p['year']})\n"
+            f"{'='*60}\n"
+            f"{p['abstract']}"
+        )
+        papers_with_full_text += 1
+
+    lines.append(f"\n[{papers_with_full_text} papers retrieved, "
+                 f"{len(pmid_to_pmc)} had PMC full text available]")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Tool dispatcher — parse TOOL_REQUESTS from LLM output and execute
 # ---------------------------------------------------------------------------
 
@@ -499,7 +651,8 @@ async def search_open_targets_safety(target_gene: str) -> str:
 _ALL_TOOL_NAMES = (
     "search_pubmed|search_clinical_trials|search_open_targets|"
     "search_uniprot|search_string_db|search_chembl|"
-    "search_open_targets_tractability|search_open_targets_safety"
+    "search_open_targets_tractability|search_open_targets_safety|"
+    "search_and_read_papers"
 )
 _TOOL_REQUEST_PATTERN = re.compile(
     rf"TOOL_REQUEST:\s*({_ALL_TOOL_NAMES})\(([^)]*)\)",
@@ -515,6 +668,7 @@ TOOL_REGISTRY: dict[str, Any] = {
     "search_chembl": search_chembl,
     "search_open_targets_tractability": search_open_targets_tractability,
     "search_open_targets_safety": search_open_targets_safety,
+    "search_and_read_papers": search_and_read_papers,
 }
 
 # ---------------------------------------------------------------------------
@@ -522,10 +676,10 @@ TOOL_REGISTRY: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 
 ROLE_TOOL_REGISTRY: dict[str, list[str]] = {
-    "cso": ["search_pubmed", "search_uniprot", "search_string_db"],
-    "cto": ["search_pubmed", "search_chembl", "search_open_targets_tractability"],
-    "cmo": ["search_clinical_trials", "search_pubmed", "search_open_targets_safety"],
-    "cbo": ["search_pubmed", "search_open_targets", "search_clinical_trials"],
+    "cso": ["search_pubmed", "search_uniprot", "search_string_db", "search_and_read_papers"],
+    "cto": ["search_pubmed", "search_chembl", "search_open_targets_tractability", "search_and_read_papers"],
+    "cmo": ["search_clinical_trials", "search_pubmed", "search_open_targets_safety", "search_and_read_papers"],
+    "cbo": ["search_pubmed", "search_open_targets", "search_clinical_trials", "search_and_read_papers"],
 }
 
 
@@ -589,6 +743,10 @@ async def execute_tool_requests(
             elif tool_name in ("search_open_targets_tractability", "search_open_targets_safety"):
                 gene = args[0] if args else ""
                 result = await tool_fn(gene)
+            elif tool_name == "search_and_read_papers":
+                query = args[0] if args else ""
+                max_papers = int(args[1]) if len(args) > 1 else 3
+                result = await tool_fn(query, max_papers)
             else:
                 result = f"Tool {tool_name} not implemented"
 

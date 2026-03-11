@@ -1,0 +1,10 @@
+# Exploring the next generation of antibody-drug conjugates.
+
+**PMID:** 38191923
+**Journal:** Nature reviews. Clinical oncology (2024)
+**Authors:** Tsuchikama K, Anami Y, Ha SYY et al.
+**Search context:** adc_design
+
+## Abstract
+
+Antibody-drug conjugates (ADCs) are a promising cancer treatment modality that enables the selective delivery of highly cytotoxic payloads to tumours. However, realizing the full potential of this platform necessitates innovative molecular designs to tackle several clinical challenges such as drug resistance, tumour heterogeneity and treatment-related adverse effects. Several emerging ADC formats exist, including bispecific ADCs, conditionally active ADCs (also known as probody-drug conjugates), immune-stimulating ADCs, protein-degrader ADCs and dual-drug ADCs, and each offers unique capabilities for tackling these various challenges. For example, probody-drug conjugates can enhance tumour specificity, whereas bispecific ADCs and dual-drug ADCs can address resistance and heterogeneity with enhanced activity. The incorporation of immune-stimulating and protein-degrader ADCs, which have distinct mechanisms of action, into existing treatment strategies could enable multimodal cancer treatment. Despite the promising outlook, the importance of patient stratification and biomarker identification cannot be overstated for these emerging ADCs, as these factors are crucial to identify patients who are most likely to derive benefit. As we continue to deepen our understanding of tumour biology and refine ADC design, we will edge closer to developing truly effective and safe ADCs for patients with treatment-refractory cancers. In this Review, we highlight advances in each ADC component (the monoclonal antibody, payload, linker and conjugation chemistry) and provide more-detailed discussions on selected examples of emerging novel ADCs of each format, enabled by engineering of one or more of these components.

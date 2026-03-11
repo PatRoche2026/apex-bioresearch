@@ -21,6 +21,7 @@ from agents import (
     LLM_TEMPERATURE,
     LLM_TIMEOUT_SECONDS,
     PUBMED_RATE_LIMIT_DELAY,
+    estimate_cost,
     llm_semaphore,
 )
 from agents.state import APEXState
@@ -166,10 +167,14 @@ PAPERS:
 Select the 8 most relevant. If fewer than 8 are relevant, select all relevant ones."""
 
 
-async def _filter_relevance(papers: list[dict], query: str) -> list[dict]:
-    """Use LLM to rank and filter papers by relevance to the query."""
+async def _filter_relevance(papers: list[dict], query: str) -> tuple[list[dict], float]:
+    """Use LLM to rank and filter papers by relevance to the query.
+
+    Returns:
+        (filtered_papers, cost_usd)
+    """
     if len(papers) <= 8:
-        return papers  # No filtering needed
+        return papers, 0.0  # No filtering needed
 
     papers_text = ""
     for i, p in enumerate(papers, 1):
@@ -183,6 +188,7 @@ async def _filter_relevance(papers: list[dict], query: str) -> list[dict]:
     )
 
     llm = ChatAnthropic(model=LLM_MODEL, temperature=0.1, api_key=ANTHROPIC_API_KEY)
+    call_cost = 0.0
 
     async with llm_semaphore:
         try:
@@ -190,8 +196,13 @@ async def _filter_relevance(papers: list[dict], query: str) -> list[dict]:
                 llm.ainvoke(prompt),
                 timeout=LLM_TIMEOUT_SECONDS,
             )
+            usage = getattr(response, "usage_metadata", None) or {}
+            call_cost = estimate_cost(
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
+            )
         except (asyncio.TimeoutError, Exception):
-            return papers[:8]  # Fallback: just take first 8
+            return papers[:8], 0.0  # Fallback: just take first 8
 
     # Parse selected PMIDs from response
     selected_pmids = re.findall(r"PMID:\s*(\d+)", response.content)
@@ -206,7 +217,7 @@ async def _filter_relevance(papers: list[dict], query: str) -> list[dict]:
         remaining = [p for p in papers if p["pmid"] not in pmid_set]
         filtered.extend(remaining[: 8 - len(filtered)])
 
-    return filtered
+    return filtered, call_cost
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +231,11 @@ def _format_as_prose(papers: list[dict], query: str) -> str:
     for i, p in enumerate(papers, 1):
         lines.append(f"## [{i}] {p['title']}")
         lines.append(f"**{p['journal']}** ({p['year']}) | PMID: {p['pmid']} | {p['authors']}")
-        lines.append(f"\n{p['abstract']}\n")
+        full_text = p.get("full_text", "")
+        if full_text:
+            lines.append(f"\n**[FULL TEXT from PMC]**\n{full_text}\n")
+        else:
+            lines.append(f"\n{p['abstract']}\n")
         lines.append("---")
     return "\n".join(lines)
 
@@ -269,7 +284,30 @@ async def scout_node(state: APEXState) -> dict:
         }
 
     # LLM relevance filter
-    filtered_papers = await _filter_relevance(raw_papers, query)
+    filtered_papers, filter_cost = await _filter_relevance(raw_papers, query)
+
+    # Enrich top 3 papers with PMC full text (lazy import to avoid circular dependency)
+    from agents.tools import _pmids_to_pmc_ids, _fetch_pmc_full_text
+
+    top_pmids = [p["pmid"] for p in filtered_papers[:3] if p["pmid"]]
+    pmc_map: dict[str, str] = {}
+    if top_pmids:
+        try:
+            pmc_map = await asyncio.to_thread(_pmids_to_pmc_ids, top_pmids)
+        except Exception:
+            pass  # Full-text enrichment is best-effort
+
+    full_text_count = 0
+    for p in filtered_papers[:3]:
+        pmc_id = pmc_map.get(p["pmid"])
+        if pmc_id:
+            try:
+                full_text = await asyncio.to_thread(_fetch_pmc_full_text, pmc_id, 3000)
+                if full_text:
+                    p["full_text"] = full_text
+                    full_text_count += 1
+            except Exception:
+                pass
 
     # Format outputs
     scout_data = _format_as_prose(filtered_papers, query)
@@ -287,6 +325,8 @@ async def scout_node(state: APEXState) -> dict:
                 "status": "complete",
                 "n_papers_raw": len(raw_papers),
                 "n_papers_filtered": len(filtered_papers),
+                "n_full_text": full_text_count,
+                "cost_usd": filter_cost,
                 "timestamp": ts,
             }
         ],

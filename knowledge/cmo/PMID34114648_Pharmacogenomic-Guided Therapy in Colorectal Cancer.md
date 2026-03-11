@@ -1,0 +1,10 @@
+# Pharmacogenomic-Guided Therapy in Colorectal Cancer.
+
+**PMID:** 34114648
+**Journal:** Clinical pharmacology and therapeutics (2021)
+**Authors:** Diasio RB, Innocenti F, Offer SM
+**Search context:** patient_stratification
+
+## Abstract
+
+Approximately 20 drugs have been shown to be effective for the treatment of colorectal cancer (CRC). These drugs are from several classes of agents and include cytotoxic drugs, therapeutics that target cell signaling pathways at the extracellular and/or intracellular levels, and combination therapies that contain multiple targeted agents and/or cytotoxic compounds. Targeted therapeutics can include monoclonal antibodies, fusion proteins, and small molecule drugs. The first introduced into clinical use was 5-fluorouracil in the early 1960s and remains the foundation for most CRC treatments in both adjuvant therapy and in advanced (metastatic) treatment regimens. As with other cancers, the consideration of biomarkers has the potential to improve CRC therapy through patient stratification. The biomarkers can include germline genetic markers, tumor-specific genetic markers, immune markers, and other biomarkers that can predict antitumor efficacy or the likelihood of toxicity prior to administration of a specific drug. Consistent with the benefit of considering biomarkers in treatment, many newer targeted therapies are developed and approved simultaneously with a companion diagnostic test to determine efficacy. This review will focus on biomarkers that have demonstrated clinical utility in CRC treatment; however, it is noted that many additional biomarkers have been theorized to contribute to drug response and/or toxicity based on known biological pathways but thus far have not attained widespread use in the clinic. The importance of pretreatment biomarker testing is expected to increase as future drug development will likely continue to focus on the concurrent development of companion diagnostics.

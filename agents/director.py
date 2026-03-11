@@ -15,6 +15,7 @@ from agents import (
     LLM_MODEL,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_SECONDS,
+    estimate_cost,
     llm_semaphore,
 )
 from agents.executives import parse_confidence, parse_scores, parse_verdict
@@ -109,6 +110,7 @@ async def portfolio_director_node(state: APEXState) -> dict[str, Any]:
         HumanMessage(content=user_prompt),
     ]
 
+    call_cost = 0.0
     async with llm_semaphore:
         try:
             response = await asyncio.wait_for(
@@ -116,6 +118,11 @@ async def portfolio_director_node(state: APEXState) -> dict[str, Any]:
                 timeout=LLM_TIMEOUT_SECONDS,
             )
             verdict_text = response.content
+            usage = getattr(response, "usage_metadata", None) or {}
+            call_cost = estimate_cost(
+                usage.get("input_tokens", 0),
+                usage.get("output_tokens", 0),
+            )
         except asyncio.TimeoutError:
             verdict_text = "[Portfolio Director timed out — defaulting to CONDITIONAL GO]"
         except Exception as e:
@@ -150,6 +157,7 @@ async def portfolio_director_node(state: APEXState) -> dict[str, Any]:
                 "confidence": confidence,
                 "weighted_total": composite["weighted_total"],
                 "round": state.get("debate_round", 0) + 1,
+                "cost_usd": call_cost,
                 "timestamp": ts,
             }
         ],

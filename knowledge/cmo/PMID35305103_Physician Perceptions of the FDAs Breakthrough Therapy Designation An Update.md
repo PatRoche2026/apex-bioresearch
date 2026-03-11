@@ -1,0 +1,41 @@
+# Physician Perceptions of the FDA's Breakthrough Therapy Designation: An Update.
+
+**PMID:** 35305103
+**Journal:** The oncologist (2022)
+**Authors:** Paquin RS, Boudewyns V, O'Donoghue AC et al.
+**PMC:** PMC8842303
+**Search context:** regulatory_strategy
+
+## Full Text
+
+
+### Introduction
+
+Drug companies can request a Breakthrough Therapy (BT) designation from the US Food and Drug Administration (FDA) for drugs intended to treat a serious medical condition if preliminary clinical evidence indicates substantial improvement on one or more clinically significant endpoints compared with available therapies.1,2 In 2016, Kesselheim et al3 published findings from a national survey of board-certified internists and specialists that revealed substantial deficits in knowledge concerning the BT designation. At that time, physicians tended to overestimate the efficacy required for drugs that are granted a BT designation—believing they were supported by stronger evidence than required by statute. We replicated three questions asked by Kesselheim et al3 to examine whether there have since been changes in physicians’ familiarity with and interpretation of the BT designation. In our study, we also drew comparisons by specialization (oncologists versus primary care physicians [PCPs]).
+
+### Subjects, Materials, and Methods
+
+We conducted a self-administered anonymous online survey among PCPs and oncologists between October 2019 and April 2020. Data summarized in this article were collected as part of a larger study comprising three concurrent between-subjects experiments examining health care providers’ perceptions of, and attitudes toward, pharmaceutical promotional materials. Questions about FDA’s BT designation were unrelated to the experimental stimuli and included at the end of the survey instrument. The study was reviewed and approved by RTI International’s Institutional Review Board and granted an exemption from FDA’s Research Involving Human Subjects Committee. All participants provided their informed consent to participate in the research.
+Participants were recruited by a market research company that offers targeted access to proprietary panels of health care providers (HCPs). Eligible physicians had to spend at least 20% of their time on direct patient care and specialize in oncology, hematology, medical oncology, or pediatric oncology, or they had to be a primary care physician (PCP) who prescribed at least one oncology medication in the past month. We achieved our target distribution with an approximately 2:1 ratio of PCPs (n = 1418) to oncologists (n = 708). To reach the target sample size, the firm supplemented panel recruitment with an email campaign directed toward physicians identified through records from the American Medical Association (AMA). Nonresponding invitees were sent three to five reminder emails during data collection, which were spaced 2 to 3 days apart. Among panelists, a total of 45 893 panel invitations to participate were sent to oncologists and 26 731 invitations were sent to PCPs. An additional 13 586 invitations were sent off-panel to oncologists using the AMA email list. Within the firm’s core panel, 21% of HCPs clicked on the survey link in the invitation. The average click-through rate among partner panels was 10%, and the click-through rate from oncologists who were sent invitations using the AMA list was 2%. Furthermore, the number of completed surveys among those who screened in as eligible was 82%. PCPs received an honorarium of $40 for completing the study and oncologists received $50. We weighted our data to population benchmarks by age and gender using the AMA Physician Masterfile (see Supplementary Table S1).4
+The study included four questions about the FDA’s BT designation, three of which were used in the study by Kesselheim et al3 (see Supplementary Table S2). These asked about familiarity with the “breakthrough therapy” designation, the minimum level of evidence that the FDA requires manufacturers to gather for the FDA to label a drug as a breakthrough, and a hypothetical prescribing scenario where participants were asked to choose between two conceptually indistinct drugs—one described as an “FDA-designated breakthrough drug” and the other described using the definition of the BT designation. The fourth question asked whether FDA’s BT designation pathway automatically qualifies a drug to receive accelerated approval.5 BT designated drugs are eligible for accelerated approval based on a surrogate or intermediate endpoint if certain criteria are met, but such approval is not automatically conferred. Some initial evidence suggests oncologists and other providers associate accelerated approval with the BT designation.6 As such, the fourth question was designed to assess a nuanced aspect of physicians’ understanding of the BT designation. Contingency tables presented in the results section report weight-adjusted counts, percentages, and 95% confidence intervals (CIs). We conducted Pearson χ2 tests of independence, converted to design-based F statistics, testing for differences in weighted responses by oncology specialization. When comparing our findings with those of Kesselheim et al,3 nonoverlapping CIs are evidence of a statistically significant difference between populations (P < .05).7
+
+### Results
+
+Unweighted demographic characteristics are presented in Table 1. Weight-adjusted frequency data are reported in Table 2 along with comparable results reported by Kesselheim et al,3 when applicable.
+Unweighted participant characteristics, no. (%a).
+Percentages may not sum to 100 due to rounding error.
+Denominators for calculating percentages by region include 6 oncologists (1%) and 6 PCPs (<1%) with missing data.
+Denominators for calculating percentages by pharmaceutical detailing policy include 1 oncologist (<1%) and 2 PCPs (<1%) with missing data.
+Familiarity, understanding, perceptions, and beliefs about automatic qualification for accelerated approval of FDA’s BT designation by specialization in the present study and results from Kesselheim et al.3
+Weighted counts and percentages are reported, which may not sum to column total sample sizes or 100%, respectively, due to rounding error.
+Familiarity ratings between oncologists and PCPs are significantly different based on a Pearson χ2 test of independence that is weight-corrected and converted to an F-test, F2.77,5876.57(.95) = 87.41, P < .001.
+The percentage of oncologists and PCPs that selected this option is significantly different based on a pairwise test of proportions with a Bonferroni-adjusted significance threshold of P < .0125.
+Participants who reported being “not at all familiar” with the BT designation were not asked this question.
+Understanding between oncologists and PCPs does not differ significantly, F2.00,3101.23(.95) = 1.78, P =.17.
+Correct response option.
+Preferences between oncologists and PCPs hypothetical do not differ significantly, F1,2125(.95) = 2.03, P =.15.
+[Drug Name] is a placeholder for one of two fictitious drug names: Axabex or Zykanta. We randomized whether Axabex or Zykanta was described as an FDA-designated breakthrough drug.
+Beliefs about automatic qualification for accelerated approval between oncologists and PCPs do not differ significantly, F1,1554(.95) = 3.73, P =.05.
+Familiarity with the BT designation was significantly associated with specialization, F2.77,5876.57(.95) = 87.41, P < .001. Oncologists were more likely to report being familiar or very familiar with the BT designation than were PCPs and less likely to report being not at all familiar with it. Compared with Kesselheim et al,3 oncologists reported greater familiarity with the BT designation but there were no differences in familiarity for PCPs.
+Physicians’ understanding and preferences for the BT designation did not significantly differ by specialization. Overall, 65% (95% CI [61%, 68%]) of physicians correctly identified the minimum level of evidence that the FDA requires for a drug to be labeled as a Breakthrough Therapy (ie, preliminary evidence). Compared with the results reported by Kesselheim et al,3 there is evidence that a greater proportion of physicians now understand that the BT designation is based on preliminary clinical ev
+[...truncated]
