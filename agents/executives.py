@@ -80,20 +80,40 @@ def parse_confidence(text: str) -> int:
 def parse_verdict(text: str) -> str:
     """Extract GO / CONDITIONAL GO / NO-GO from text.
 
-    Uses upper-cased text and checks NO-GO first (most restrictive),
-    then CONDITIONAL GO, then standalone GO (not preceded by NO/CONDITIONAL).
+    Scans from the BOTTOM of the text because the final recommendation
+    is always at the end — earlier text discusses other agents' positions.
     """
     upper = text.upper()
-    # 1. NO-GO first — match "NO-GO", "NO GO", "NOGO" (not preceded by "CONDITIONAL ")
-    if re.search(r"(?<!CONDITIONAL\s)NO[\s-]?GO", upper):
+
+    # 1. Scan lines from bottom — first verdict keyword found is the final one
+    lines = upper.split("\n")
+    for line in reversed(lines):
+        line = line.strip()
+        if "NO-GO" in line or "NO GO" in line or "NOGO" in line:
+            if "CONDITIONAL" not in line:
+                return "NO-GO"
+        if "CONDITIONAL GO" in line or "CONDITIONAL-GO" in line:
+            return "CONDITIONAL GO"
+
+    # 2. Fallback: scan the last 500 chars for the final verdict
+    tail = upper[-500:]
+    if "NO-GO" in tail or "NO GO" in tail:
         return "NO-GO"
-    # 2. CONDITIONAL GO
-    if re.search(r"CONDITIONAL[\s-]?GO", upper):
+    if "CONDITIONAL GO" in tail:
         return "CONDITIONAL GO"
-    # 3. Plain GO — must not be preceded by "NO" or "CONDITIONAL"
-    if re.search(r"(?<!NO[\s-])(?<!NO)(?<!CONDITIONAL\s)\bGO\b", upper):
+    if "VERDICT: GO" in tail or "VERDICT:\nGO" in tail:
         return "GO"
-    return "CONDITIONAL GO"  # default if parsing fails
+
+    # 3. Last resort: count occurrences across entire text
+    no_go_count = upper.count("NO-GO") + upper.count("NO GO") + upper.count("NOGO")
+    go_count = upper.count(" GO ") + upper.count(" GO,") + upper.count(" GO.")
+    if no_go_count > 0:
+        return "NO-GO"
+    if "CONDITIONAL" in upper and go_count > 0:
+        return "CONDITIONAL GO"
+    if go_count > 0:
+        return "GO"
+    return "UNKNOWN"
 
 
 # ---------------------------------------------------------------------------

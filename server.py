@@ -114,19 +114,10 @@ _NODE_TYPE_MAP = {
 def _parse_verdict_short(text: str) -> str:
     """Extract short verdict from portfolio verdict text.
 
-    Uses same logic as parse_verdict in executives.py — NO-GO first,
-    then CONDITIONAL GO, then standalone GO.
+    Delegates to the canonical parse_verdict for consistency.
     """
-    upper = text.upper()
-    # NO-GO first (not preceded by CONDITIONAL)
-    if re.search(r"(?<!CONDITIONAL\s)NO[\s-]?GO", upper):
-        return "NO-GO"
-    if re.search(r"CONDITIONAL[\s-]?GO", upper):
-        return "CONDITIONAL GO"
-    # Standalone GO — not preceded by NO or CONDITIONAL
-    if re.search(r"(?<!NO[\s-])(?<!NO)(?<!CONDITIONAL\s)\bGO\b", upper):
-        return "GO"
-    return "CONDITIONAL GO"
+    from agents.executives import parse_verdict
+    return parse_verdict(text)
 
 
 def _sum_costs(result: dict) -> float:
