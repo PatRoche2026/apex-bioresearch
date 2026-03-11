@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -472,10 +473,11 @@ async def submit_feedback(session_id: str, req: FeedbackRequest):
 async def ws_feedback(websocket: WebSocket, session_id: str):
     """WebSocket streaming re-evaluation with CEO feedback.
 
-    Client sends: {"feedback": "Focus more on safety profile"}
+    Client sends: {"feedback": "Focus more on safety profile"} or {"message": "..."}
     Server streams the full re-evaluation with CEO feedback injected.
     """
     await websocket.accept()
+    keepalive_task = asyncio.create_task(_ws_keepalive(websocket))
 
     try:
         if session_id not in sessions:
@@ -622,6 +624,26 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
             await websocket.close()
         except Exception:
             pass
+    finally:
+        keepalive_task.cancel()
+
+
+# ---------------------------------------------------------------------------
+# WebSocket keepalive — prevent Railway/proxy timeout on long evaluations
+# ---------------------------------------------------------------------------
+
+
+async def _ws_keepalive(websocket: WebSocket, interval: int = 15) -> None:
+    """Send ping frames every `interval` seconds to keep the connection alive."""
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            await websocket.send_json({
+                "type": "ping",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception:
+        pass  # Connection closed or send failed — just stop
 
 
 # ---------------------------------------------------------------------------
@@ -637,6 +659,7 @@ async def ws_evaluate(websocket: WebSocket):
     Server streams events as each node completes.
     """
     await websocket.accept()
+    keepalive_task = asyncio.create_task(_ws_keepalive(websocket))
 
     try:
         data = await websocket.receive_json()
@@ -752,3 +775,5 @@ async def ws_evaluate(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
+    finally:
+        keepalive_task.cancel()
