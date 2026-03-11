@@ -469,25 +469,18 @@ async def submit_feedback(session_id: str, req: FeedbackRequest):
 _VALID_DIRECTED_ROLES = {"cso", "cto", "cmo", "cbo", "director"}
 
 _DIRECTED_FEEDBACK_PROMPT = """\
-You are {role_label}.
+The CEO asks you directly: "{feedback}"
 
-The CEO has asked you a follow-up question about the drug target evaluation.
-
-QUERY: {query}
+Context: You just evaluated {query} and your assessment is below.
 
 YOUR PREVIOUS ASSESSMENT:
 {previous_assessment}
 
-RESEARCH CONTEXT (Scout Summary):
-{scout_data_snippet}
-
-CEO QUESTION/FEEDBACK:
-{feedback}
-
-Respond directly to the CEO's question in your voice and expertise. Be concise \
-but thorough. Reference specific evidence from your assessment or the research \
-data. If the CEO asks for information outside your domain, acknowledge that and \
-suggest which executive would be better suited to answer."""
+Answer the CEO's question directly and concisely — 3-5 sentences maximum. \
+Speak naturally as if you're in a boardroom meeting, not writing a report. \
+If they ask about data, cite 1-2 key papers. If they ask your opinion, give it clearly. \
+Don't repeat your full assessment. Don't use headers or score formats. \
+Just answer the question like a human executive would."""
 
 
 async def _directed_agent_call(
@@ -520,13 +513,9 @@ async def _directed_agent_call(
         # Use rebuttal if available, else assessment
         previous = result.get(f"{role}_rebuttal") or result.get(f"{role}_assessment", "")
 
-    scout_snippet = (result.get("scout_data") or "")[:2000]
-
     user_prompt = _DIRECTED_FEEDBACK_PROMPT.format(
-        role_label=role_label,
         query=query,
-        previous_assessment=previous[:3000],
-        scout_data_snippet=scout_snippet,
+        previous_assessment=previous[:1500],
         feedback=feedback,
     )
 
@@ -537,7 +526,7 @@ async def _directed_agent_call(
         model=model,
         temperature=LLM_TEMPERATURE,
         api_key=ANTHROPIC_API_KEY,
-        max_tokens=1500,
+        max_tokens=500,
     )
 
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]

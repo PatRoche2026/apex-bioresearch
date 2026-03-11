@@ -329,6 +329,10 @@ CEO_FEEDBACK_SECTION = """
 CEO DIRECTIVE (from the board CEO — address this directly in your assessment):
 {ceo_feedback}
 
+IMPORTANT: When responding to CEO feedback, keep your response SHORT (3-5 sentences). \
+Answer their specific question directly. Do not repeat your full assessment or use \
+structured headers/scores. Speak as if you're in a boardroom conversation.
+
 """
 
 TOOL_FOLLOWUP_TEMPLATE = """\
