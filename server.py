@@ -500,8 +500,8 @@ async def _directed_agent_call(
     Returns (response_text, cost_usd).
     """
     from agents import (
-        ANTHROPIC_API_KEY, LLM_MODEL, LLM_TEMPERATURE,
-        LLM_TIMEOUT_SECONDS, estimate_cost, llm_semaphore,
+        ANTHROPIC_API_KEY, LLM_MODEL_STRONG, LLM_TEMPERATURE,
+        LLM_TIMEOUT_SECONDS, ROLE_MODELS, estimate_cost, llm_semaphore,
     )
     from langchain_anthropic import ChatAnthropic
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -530,8 +530,11 @@ async def _directed_agent_call(
         feedback=feedback,
     )
 
+    # Use role-specific model (director → Sonnet, others → per ROLE_MODELS)
+    model_key = "portfolio_director" if role == "director" else role
+    model = ROLE_MODELS.get(model_key, LLM_MODEL_STRONG)
     llm = ChatAnthropic(
-        model=LLM_MODEL,
+        model=model,
         temperature=LLM_TEMPERATURE,
         api_key=ANTHROPIC_API_KEY,
         max_tokens=1500,
@@ -550,6 +553,7 @@ async def _directed_agent_call(
             cost = estimate_cost(
                 usage.get("input_tokens", 0),
                 usage.get("output_tokens", 0),
+                model=model,
             )
             return response.content, cost
         except asyncio.TimeoutError:

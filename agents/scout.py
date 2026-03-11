@@ -17,10 +17,9 @@ from langchain_anthropic import ChatAnthropic
 from agents import (
     ANTHROPIC_API_KEY,
     ENTREZ_EMAIL,
-    LLM_MODEL,
-    LLM_TEMPERATURE,
     LLM_TIMEOUT_SECONDS,
     PUBMED_RATE_LIMIT_DELAY,
+    ROLE_MODELS,
     estimate_cost,
     llm_semaphore,
 )
@@ -187,7 +186,8 @@ async def _filter_relevance(papers: list[dict], query: str) -> tuple[list[dict],
         papers_text=papers_text,
     )
 
-    llm = ChatAnthropic(model=LLM_MODEL, temperature=0.1, api_key=ANTHROPIC_API_KEY)
+    _scout_model = ROLE_MODELS.get("scout", "claude-haiku-4-5-20251001")
+    llm = ChatAnthropic(model=_scout_model, temperature=0.1, api_key=ANTHROPIC_API_KEY)
     call_cost = 0.0
 
     async with llm_semaphore:
@@ -200,6 +200,7 @@ async def _filter_relevance(papers: list[dict], query: str) -> tuple[list[dict],
             call_cost = estimate_cost(
                 usage.get("input_tokens", 0),
                 usage.get("output_tokens", 0),
+                model=_scout_model,
             )
         except (asyncio.TimeoutError, Exception):
             return papers[:8], 0.0  # Fallback: just take first 8

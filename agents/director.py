@@ -12,9 +12,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents import (
     ANTHROPIC_API_KEY,
-    LLM_MODEL,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_SECONDS,
+    ROLE_MODELS,
     estimate_cost,
     llm_semaphore,
 )
@@ -23,11 +23,12 @@ from agents.prompts import CEO_FEEDBACK_SECTION, DIRECTOR_SYSTEM_PROMPT, DIRECTO
 from agents.state import APEXState
 
 # ---------------------------------------------------------------------------
-# LLM instance (slightly higher max_tokens for the synthesis)
+# LLM instance — Portfolio Director always uses Sonnet (strong model)
 # ---------------------------------------------------------------------------
 
+_DIRECTOR_MODEL = ROLE_MODELS["portfolio_director"]
 _llm = ChatAnthropic(
-    model=LLM_MODEL,
+    model=_DIRECTOR_MODEL,
     temperature=LLM_TEMPERATURE,
     api_key=ANTHROPIC_API_KEY,
     max_tokens=3000,
@@ -122,6 +123,7 @@ async def portfolio_director_node(state: APEXState) -> dict[str, Any]:
             call_cost = estimate_cost(
                 usage.get("input_tokens", 0),
                 usage.get("output_tokens", 0),
+                model=_DIRECTOR_MODEL,
             )
         except asyncio.TimeoutError:
             verdict_text = "[Portfolio Director timed out — defaulting to CONDITIONAL GO]"

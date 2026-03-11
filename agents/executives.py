@@ -13,8 +13,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from agents import (
     ANTHROPIC_API_KEY,
     LLM_MODEL,
+    LLM_MODEL_STRONG,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_SECONDS,
+    ROLE_MODELS,
     estimate_cost,
     llm_semaphore,
 )
@@ -39,15 +41,22 @@ except ImportError:
     _retrieve_context = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
-# Shared LLM instance
+# LLM instance cache — one per model to avoid re-creating
 # ---------------------------------------------------------------------------
 
-_llm = ChatAnthropic(
-    model=LLM_MODEL,
-    temperature=LLM_TEMPERATURE,
-    api_key=ANTHROPIC_API_KEY,
-    max_tokens=2048,
-)
+_llm_cache: dict[str, ChatAnthropic] = {}
+
+
+def _get_llm(model: str) -> ChatAnthropic:
+    """Get or create a cached LLM instance for the given model."""
+    if model not in _llm_cache:
+        _llm_cache[model] = ChatAnthropic(
+            model=model,
+            temperature=LLM_TEMPERATURE,
+            api_key=ANTHROPIC_API_KEY,
+            max_tokens=2048,
+        )
+    return _llm_cache[model]
 
 # ---------------------------------------------------------------------------
 # Score parsing — regex extraction from structured LLM output
@@ -121,12 +130,16 @@ def parse_verdict(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _call_llm(system_prompt: str, user_prompt: str) -> tuple[str, float]:
+async def _call_llm(system_prompt: str, user_prompt: str, role: str = "cso") -> tuple[str, float]:
     """Call LLM with rate limit semaphore and timeout protection.
+
+    Uses role-specific model (Sonnet for CSO/Director, Haiku for others).
 
     Returns:
         (response_text, estimated_cost_usd)
     """
+    model = ROLE_MODELS.get(role, LLM_MODEL_STRONG)
+    llm = _get_llm(model)
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
@@ -134,14 +147,14 @@ async def _call_llm(system_prompt: str, user_prompt: str) -> tuple[str, float]:
     async with llm_semaphore:
         try:
             response = await asyncio.wait_for(
-                _llm.ainvoke(messages),
+                llm.ainvoke(messages),
                 timeout=LLM_TIMEOUT_SECONDS,
             )
             # Extract token usage for cost estimation
             usage = getattr(response, "usage_metadata", None) or {}
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
-            cost = estimate_cost(input_tokens, output_tokens)
+            cost = estimate_cost(input_tokens, output_tokens, model=model)
             return response.content, cost
         except asyncio.TimeoutError:
             return "[Agent timed out after 60s — proceeding with available assessments]", 0.0
@@ -194,7 +207,7 @@ def _make_assess_node(role: str):
         if rag_context:
             user_prompt = f"{rag_context}\n\n---\n\n{user_prompt}"
 
-        assessment, call_cost = await _call_llm(system_prompt, user_prompt)
+        assessment, call_cost = await _call_llm(system_prompt, user_prompt, role=role)
         node_cost = call_cost
 
         # Two-pass: check for TOOL_REQUESTS and execute if found (role-filtered)
@@ -209,7 +222,7 @@ def _make_assess_node(role: str):
                         query=state["query"],
                         tool_results=tool_results,
                     )
-                    assessment, followup_cost = await _call_llm(system_prompt, followup_prompt)
+                    assessment, followup_cost = await _call_llm(system_prompt, followup_prompt, role=role)
                     node_cost += followup_cost
             except Exception:
                 pass  # Tool failure should not block assessment
@@ -293,7 +306,7 @@ def _make_rebuttal_node(role: str):
             cbo_assessment=state["cbo_assessment"],
         )
 
-        rebuttal, call_cost = await _call_llm(system_prompt, user_prompt)
+        rebuttal, call_cost = await _call_llm(system_prompt, user_prompt, role=role)
         scores = parse_scores(rebuttal)
 
         result: dict = {
