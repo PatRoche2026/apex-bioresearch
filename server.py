@@ -500,7 +500,8 @@ async def ws_feedback(websocket: WebSocket, session_id: str):
             return
 
         data = await websocket.receive_json()
-        feedback = data.get("feedback", "").strip()
+        # Accept both "feedback" and "message" keys from frontend
+        feedback = (data.get("feedback") or data.get("message") or "").strip()
 
         if not feedback or len(feedback) < 3:
             await websocket.send_json({
