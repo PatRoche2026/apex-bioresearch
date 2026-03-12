@@ -1,4 +1,4 @@
-"""APEX LangGraph pipeline — full wiring with fan-out/fan-in + conditional loop."""
+"""APEX LangGraph pipelines — evaluation graph + planning graph."""
 
 from __future__ import annotations
 
@@ -14,6 +14,13 @@ from agents.executives import (
     cso_rebuttal_node,
     cto_assess_node,
     cto_rebuttal_node,
+)
+from agents.planning import (
+    cbo_plan_node,
+    cmo_plan_node,
+    cso_plan_node,
+    cto_plan_node,
+    director_synthesis_node,
 )
 from agents.scout import scout_node
 from agents.state import APEXState
@@ -147,4 +154,67 @@ def make_initial_state(query: str) -> APEXState:
         evaluation_round=0,
         debate_round=0,
         activity_log=[],
+        # graph_ddp.py fields
+        gene="",
+        indication="",
+        cso_ddp_section="",
+        cto_ddp_section="",
+        cmo_ddp_section="",
+        cbo_ddp_section="",
+        ddp_synthesis="",
+        # compiled_planning_graph fields
+        planning_triggered=False,
+        cso_plan="",
+        cto_plan="",
+        cmo_plan="",
+        cbo_plan="",
+        director_synthesis="",
+        ddp_status="pending",
     )
+
+
+# ---------------------------------------------------------------------------
+# Planning graph — triggered after CEO accepts a GO verdict
+# ---------------------------------------------------------------------------
+
+
+def build_planning_graph() -> StateGraph:
+    """Build and compile the DDP planning pipeline.
+
+    Topology:
+        START → [cso_plan, cto_plan, cmo_plan, cbo_plan]   (parallel fan-out)
+          → director_synthesis                               (fan-in)
+          → END
+
+    No conditional loop — the DDP is a single-pass plan, not a debate.
+    Receives the full APEXState carrying all evaluation outputs as context.
+    """
+    g = StateGraph(APEXState)
+
+    # 4 parallel planning nodes
+    g.add_node("cso_plan", cso_plan_node)
+    g.add_node("cto_plan", cto_plan_node)
+    g.add_node("cmo_plan", cmo_plan_node)
+    g.add_node("cbo_plan", cbo_plan_node)
+
+    # Director synthesis (fan-in)
+    g.add_node("director_synthesis", director_synthesis_node)
+
+    # Fan-out from START → 4 parallel plan nodes
+    g.add_edge(START, "cso_plan")
+    g.add_edge(START, "cto_plan")
+    g.add_edge(START, "cmo_plan")
+    g.add_edge(START, "cbo_plan")
+
+    # Fan-in: all 4 → director_synthesis
+    g.add_edge("cso_plan", "director_synthesis")
+    g.add_edge("cto_plan", "director_synthesis")
+    g.add_edge("cmo_plan", "director_synthesis")
+    g.add_edge("cbo_plan", "director_synthesis")
+
+    g.add_edge("director_synthesis", END)
+
+    return g.compile()
+
+
+compiled_planning_graph = build_planning_graph()

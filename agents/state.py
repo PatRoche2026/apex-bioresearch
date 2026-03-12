@@ -57,3 +57,21 @@ class APEXState(TypedDict):
     # --- Audit trail ---
     # MUST use Annotated + operator.add so parallel nodes merge logs instead of overwriting
     activity_log: Annotated[list[dict], operator.add]
+
+    # --- Drug Development Plan (DDP) — populated after CEO accepts a GO verdict ---
+    gene: str                                                # Extracted from query (e.g. "OSMR")
+    indication: str                                          # Extracted from query (e.g. "ulcerative colitis")
+    cso_ddp_section: str                                     # Elena's Target Validation Strategy (graph_ddp.py)
+    cto_ddp_section: str                                     # Marcus's Modality & Manufacturing Strategy (graph_ddp.py)
+    cmo_ddp_section: str                                     # Sarah's Clinical Development Strategy (graph_ddp.py)
+    cbo_ddp_section: str                                     # James's Commercial & Strategic Assessment (graph_ddp.py)
+    ddp_synthesis: str                                       # Amara's Executive Summary (graph_ddp.py)
+
+    # --- Planning pipeline (compiled_planning_graph in graph.py) ---
+    planning_triggered: bool                                 # True once CEO clicks "Accept" on a GO verdict
+    cso_plan: str                                            # Elena's Target Validation Strategy
+    cto_plan: str                                            # Marcus's Modality & Manufacturing Strategy
+    cmo_plan: str                                            # Sarah's Clinical Development Strategy
+    cbo_plan: str                                            # James's Commercial & Strategic Assessment
+    director_synthesis: str                                  # Amara's Executive Summary & Integrated Timeline
+    ddp_status: str                                          # "pending" | "in_progress" | "complete" | "skipped"

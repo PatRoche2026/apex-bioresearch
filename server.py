@@ -6,16 +6,18 @@ import asyncio
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from agents.graph import build_graph, make_initial_state
+from agents.graph import build_graph, compiled_planning_graph, make_initial_state
 from agents.prompts import AGENT_PERSONAS, EXECUTIVE_PROMPTS, EXECUTIVE_ROLES, DIRECTOR_SYSTEM_PROMPT
 from agents.state import APEXState
+from generate_ddp import generate_ddp_pdf
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -65,6 +67,10 @@ class FeedbackRequest(BaseModel):
         ...,
         min_length=3,
         description="CEO feedback to inject into the next evaluation round",
+    )
+    action: Optional[str] = Field(
+        default=None,
+        description="Optional action: 'approve' triggers DDP planning, 'reject' marks session rejected",
     )
 
 
@@ -161,6 +167,71 @@ def _extract_event_data(node_name: str, node_data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Planning pipeline helpers
+# ---------------------------------------------------------------------------
+
+_PLAN_NODE_AGENT_MAP = {
+    "cso_plan": "cso",
+    "cto_plan": "cto",
+    "cmo_plan": "cmo",
+    "cbo_plan": "cbo",
+    "director_synthesis": "portfolio_director",
+}
+
+
+def _make_planning_state(session: dict) -> APEXState:
+    """Build an APEXState for the planning pipeline from a completed evaluation session."""
+    result = session["result"]
+    state = make_initial_state(session["query"])
+    for field in [
+        "scout_data", "scout_sources",
+        "cso_assessment", "cto_assessment", "cmo_assessment", "cbo_assessment",
+        "cso_rebuttal", "cto_rebuttal", "cmo_rebuttal", "cbo_rebuttal",
+        "portfolio_verdict", "confidence_score", "executive_scores",
+        "ceo_feedback", "ceo_feedback_history", "evaluation_round", "debate_round",
+        "gene", "indication", "activity_log",
+    ]:
+        if field in result:
+            state[field] = result[field]
+    state["planning_triggered"] = True
+    state["ddp_status"] = "in_progress"
+    return state
+
+
+def _extract_gene_indication(session: dict) -> tuple[str, str]:
+    """Extract gene and indication from session state, falling back to query split."""
+    result = session["result"]
+    gene = result.get("gene", "").strip()
+    indication = result.get("indication", "").strip()
+    if not gene or not indication:
+        tokens = session["query"].strip().split()
+        gene = gene or (tokens[0].upper() if tokens else session["query"])
+        indication = indication or (" ".join(tokens[1:]) if len(tokens) > 1 else session["query"])
+    return gene, indication
+
+
+def _extract_evidence_needed(verdict_text: str) -> str:
+    """Extract the conditions/evidence needed to change the verdict from Director text."""
+    if not verdict_text:
+        return "Additional clinical and preclinical evidence required."
+    # Scan for common conditional language
+    patterns = [
+        r"(?:would require|requires?|need[s]? to see|conditional on|pending|subject to)[^\.\n]{10,200}",
+        r"(?:before (?:a )?go|prior to investment|key requirements?)[^\.\n]{10,200}",
+        r"(?:evidence needed|data gaps?|open questions?)[^\.\n]{10,200}",
+    ]
+    found = []
+    for pat in patterns:
+        matches = re.findall(pat, verdict_text, flags=re.IGNORECASE)
+        found.extend(m.strip() for m in matches[:2])
+    if found:
+        return " ".join(found[:3])
+    # Fallback: return last paragraph (often contains conditions)
+    paragraphs = [p.strip() for p in verdict_text.split("\n\n") if p.strip()]
+    return paragraphs[-1][:400] if paragraphs else "See full Director verdict for details."
+
+
+# ---------------------------------------------------------------------------
 # REST Endpoints
 # ---------------------------------------------------------------------------
 
@@ -187,6 +258,9 @@ def root():
             "POST /feedback/{session_id}": "Submit CEO feedback for re-evaluation",
             "WS /ws/evaluate": "WebSocket streaming evaluation",
             "WS /ws/feedback/{session_id}": "WebSocket streaming re-evaluation with CEO feedback",
+            "WS /ws/plan/{session_id}": "WebSocket streaming DDP planning pipeline",
+            "POST /reject/{session_id}": "CEO rejects verdict — marks session rejected",
+            "GET /download/ddp/{session_id}": "Download generated DDP PDF",
             "GET /results/{session_id}": "Fetch completed evaluation results",
             "GET /sessions": "List all completed sessions",
             "GET /export/{session_id}": "Download Markdown report",
@@ -396,6 +470,87 @@ def _generate_markdown_report(query: str, result: dict, session_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# DDP Download Endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.get("/download/ddp/{session_id}")
+def download_ddp(session_id: str):
+    """Download the generated DDP PDF for a session.
+
+    Returns 404 if the planning pipeline has not been run yet.
+    """
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    session = sessions[session_id]
+    pdf_path = session.get("ddp_pdf_path")
+
+    if not pdf_path or not Path(pdf_path).exists():
+        raise HTTPException(
+            status_code=404,
+            detail="DDP PDF not yet generated. Run the planning pipeline first.",
+        )
+
+    gene, indication = _extract_gene_indication(session)
+    filename = f"APEX_DDP_{gene}_{indication.replace(' ', '_')}.pdf"
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reject Endpoint
+# ---------------------------------------------------------------------------
+
+
+class RejectRequest(BaseModel):
+    reason: Optional[str] = Field(default="", description="Optional CEO rejection note")
+
+
+@app.post("/reject/{session_id}")
+def reject_session(session_id: str, req: RejectRequest):
+    """Mark a session as rejected by the CEO.
+
+    Updates ddp_status to 'rejected' and returns a summary including
+    what evidence would be needed to revisit the decision.
+    """
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    session = sessions[session_id]
+    if session["status"] != "complete":
+        raise HTTPException(status_code=400, detail="Session is not complete yet")
+
+    result = session["result"]
+    gene, indication = _extract_gene_indication(session)
+
+    # Update session state
+    session["result"]["ddp_status"] = "rejected"
+    session["ddp_status"] = "rejected"
+    session["rejection_reason"] = req.reason or ""
+    session["rejected_at"] = datetime.now(timezone.utc).isoformat()
+
+    verdict_short = _parse_verdict_short(result.get("portfolio_verdict", ""))
+    evidence_needed = _extract_evidence_needed(result.get("portfolio_verdict", ""))
+
+    return {
+        "status": "rejected",
+        "session_id": session_id,
+        "gene": gene,
+        "indication": indication,
+        "verdict": verdict_short,
+        "confidence_score": result.get("confidence_score", 0),
+        "reason": req.reason or "No reason provided.",
+        "evidence_needed": evidence_needed,
+        "rejected_at": session["rejected_at"],
+    }
+
+
+# ---------------------------------------------------------------------------
 # CEO Feedback Endpoint — Human-in-the-Loop (Feature 4)
 # ---------------------------------------------------------------------------
 
@@ -406,6 +561,10 @@ async def submit_feedback(session_id: str, req: FeedbackRequest):
 
     The feedback is injected into agent prompts for the next round.
     Returns a new session_id for the re-evaluation.
+
+    Optional action field:
+      "approve" — triggers the DDP planning pipeline synchronously
+      "reject"  — delegates to the reject endpoint logic
     """
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -413,6 +572,59 @@ async def submit_feedback(session_id: str, req: FeedbackRequest):
     session = sessions[session_id]
     if session["status"] != "complete":
         raise HTTPException(status_code=400, detail="Session is not complete yet")
+
+    # Handle action shortcuts
+    if req.action == "approve":
+        # Trigger planning pipeline synchronously
+        state = _make_planning_state(session)
+        plan_result = await compiled_planning_graph.ainvoke(state)
+
+        gene, indication = _extract_gene_indication(session)
+        pdf_path = generate_ddp_pdf(
+            gene=gene,
+            indication=indication,
+            verdict=_parse_verdict_short(session["result"].get("portfolio_verdict", "")),
+            confidence=float(session["result"].get("confidence_score", 0)),
+            cso_plan=plan_result.get("cso_plan", ""),
+            cto_plan=plan_result.get("cto_plan", ""),
+            cmo_plan=plan_result.get("cmo_plan", ""),
+            cbo_plan=plan_result.get("cbo_plan", ""),
+            director_synthesis=plan_result.get("director_synthesis", ""),
+            session_id=session_id,
+        )
+
+        for field in ["cso_plan", "cto_plan", "cmo_plan", "cbo_plan", "director_synthesis", "ddp_status"]:
+            session["result"][field] = plan_result.get(field, "")
+        session["result"].setdefault("activity_log", []).extend(plan_result.get("activity_log", []))
+        session["ddp_pdf_path"] = pdf_path
+        session["ddp_status"] = "complete"
+
+        return {
+            "action": "approve",
+            "session_id": session_id,
+            "ddp_status": "complete",
+            "pdf_url": f"/download/ddp/{session_id}",
+            "estimated_cost_usd": _sum_costs(plan_result),
+        }
+
+    if req.action == "reject":
+        gene, indication = _extract_gene_indication(session)
+        result = session["result"]
+        session["result"]["ddp_status"] = "rejected"
+        session["ddp_status"] = "rejected"
+        session["rejection_reason"] = req.feedback
+        session["rejected_at"] = datetime.now(timezone.utc).isoformat()
+        return {
+            "action": "reject",
+            "status": "rejected",
+            "session_id": session_id,
+            "gene": gene,
+            "indication": indication,
+            "verdict": _parse_verdict_short(result.get("portfolio_verdict", "")),
+            "reason": req.feedback,
+            "evidence_needed": _extract_evidence_needed(result.get("portfolio_verdict", "")),
+            "rejected_at": session["rejected_at"],
+        }
 
     original_result = session["result"]
     original_query = session["query"]
@@ -804,6 +1016,139 @@ async def _ws_keepalive(websocket: WebSocket, interval: int = 15) -> None:
             })
     except Exception:
         pass  # Connection closed or send failed — just stop
+
+
+# ---------------------------------------------------------------------------
+# WebSocket Planning Endpoint — streams DDP planning as each section completes
+# ---------------------------------------------------------------------------
+
+
+@app.websocket("/ws/plan/{session_id}")
+async def ws_plan(websocket: WebSocket, session_id: str):
+    """WebSocket streaming DDP planning pipeline.
+
+    Connect after a GO verdict is accepted. Streams:
+      {"type": "plan_started"}
+      {"type": "plan_progress", "agent": "cso", "status": "complete", "plan": "..."}
+      {"type": "plan_progress", "agent": "cto", "status": "complete", "plan": "..."}
+      {"type": "plan_progress", "agent": "cmo", "status": "complete", "plan": "..."}
+      {"type": "plan_progress", "agent": "cbo", "status": "complete", "plan": "..."}
+      {"type": "synthesis_complete", "synthesis": "..."}
+      {"type": "ddp_complete", "pdf_url": "/download/ddp/{session_id}", "estimated_cost_usd": 0.XX}
+    """
+    await websocket.accept()
+    keepalive_task = asyncio.create_task(_ws_keepalive(websocket))
+
+    try:
+        if session_id not in sessions:
+            await websocket.send_json({
+                "type": "error",
+                "data": {"message": f"Session {session_id} not found"},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            await websocket.close()
+            return
+
+        session = sessions[session_id]
+        if session["status"] != "complete":
+            await websocket.send_json({
+                "type": "error",
+                "data": {"message": "Session is not complete yet"},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            await websocket.close()
+            return
+
+        await websocket.send_json({
+            "type": "plan_started",
+            "data": {"session_id": session_id, "query": session["query"]},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        state = _make_planning_state(session)
+        plan_result: dict[str, Any] = {}
+
+        async for event in compiled_planning_graph.astream(state, stream_mode="updates"):
+            for node_name, node_data in event.items():
+                if node_data is None:
+                    continue
+
+                evt_ts = datetime.now(timezone.utc).isoformat()
+                agent_role = _PLAN_NODE_AGENT_MAP.get(node_name, "system")
+
+                if node_name == "director_synthesis":
+                    await websocket.send_json({
+                        "type": "synthesis_complete",
+                        "agent": agent_role,
+                        "data": {"synthesis": node_data.get("director_synthesis", "")},
+                        "timestamp": evt_ts,
+                    })
+                elif node_name in _PLAN_NODE_AGENT_MAP:
+                    field = f"{node_name.split('_')[0]}_plan"
+                    await websocket.send_json({
+                        "type": "plan_progress",
+                        "agent": agent_role,
+                        "status": "complete",
+                        "data": {"plan": node_data.get(field, "")},
+                        "timestamp": evt_ts,
+                    })
+
+                # Accumulate results
+                for k, v in node_data.items():
+                    if k == "activity_log":
+                        plan_result.setdefault("activity_log", []).extend(v)
+                    else:
+                        plan_result[k] = v
+
+        # Generate PDF
+        gene, indication = _extract_gene_indication(session)
+        pdf_path = generate_ddp_pdf(
+            gene=gene,
+            indication=indication,
+            verdict=_parse_verdict_short(session["result"].get("portfolio_verdict", "")),
+            confidence=float(session["result"].get("confidence_score", 0)),
+            cso_plan=plan_result.get("cso_plan", ""),
+            cto_plan=plan_result.get("cto_plan", ""),
+            cmo_plan=plan_result.get("cmo_plan", ""),
+            cbo_plan=plan_result.get("cbo_plan", ""),
+            director_synthesis=plan_result.get("director_synthesis", ""),
+            session_id=session_id,
+        )
+
+        # Persist results on session
+        for field in ["cso_plan", "cto_plan", "cmo_plan", "cbo_plan", "director_synthesis", "ddp_status"]:
+            session["result"][field] = plan_result.get(field, "")
+        session["result"].setdefault("activity_log", []).extend(plan_result.get("activity_log", []))
+        session["ddp_pdf_path"] = pdf_path
+        session["ddp_status"] = "complete"
+
+        await websocket.send_json({
+            "type": "ddp_complete",
+            "data": {
+                "session_id": session_id,
+                "pdf_url": f"/download/ddp/{session_id}",
+                "estimated_cost_usd": _sum_costs(plan_result),
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "data": {"message": f"Planning pipeline error: {str(e)[:500]}"},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+    finally:
+        keepalive_task.cancel()
 
 
 # ---------------------------------------------------------------------------
