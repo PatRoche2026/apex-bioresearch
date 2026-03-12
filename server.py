@@ -512,7 +512,7 @@ class RejectRequest(BaseModel):
 
 
 @app.post("/reject/{session_id}")
-def reject_session(session_id: str, req: RejectRequest):
+def reject_session(session_id: str, req: Optional[RejectRequest] = None):
     """Mark a session as rejected by the CEO.
 
     Updates ddp_status to 'rejected' and returns a summary including
@@ -531,7 +531,7 @@ def reject_session(session_id: str, req: RejectRequest):
     # Update session state
     session["result"]["ddp_status"] = "rejected"
     session["ddp_status"] = "rejected"
-    session["rejection_reason"] = req.reason or ""
+    session["rejection_reason"] = (req.reason if req else "") or ""
     session["rejected_at"] = datetime.now(timezone.utc).isoformat()
 
     verdict_short = _parse_verdict_short(result.get("portfolio_verdict", ""))
